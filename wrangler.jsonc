@@ -1,0 +1,7 @@
+{
+  "name": "outlook-calendar",
+  "main": "worker.js",
+  "compatibility_date": "2025-10-01",
+  // Conserva las variables/secretos configurados en el panel de Cloudflare
+  "keep_vars": true
+}
