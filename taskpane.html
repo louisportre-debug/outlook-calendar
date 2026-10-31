@@ -38,7 +38,7 @@
         </div>
 
         <button id="analyzeButton" class="primary">
-            🔎 Analizar evento
+            🔎 Analizar de nuevo
         </button>
 
 
@@ -162,6 +162,38 @@
             </div>
 
 
+            <!-- ZONA HORARIA -->
+
+            <div class="field">
+
+                <label for="eventTimezone">
+                    Zona horaria
+                </label>
+
+                <input
+                    type="text"
+                    id="eventTimezone"
+                    list="timezones"
+                    placeholder="Europe/Paris">
+
+                <datalist id="timezones">
+                    <option value="Europe/Paris">
+                    <option value="Europe/Madrid">
+                    <option value="Europe/London">
+                    <option value="Europe/Lisbon">
+                    <option value="America/Lima">
+                    <option value="America/Bogota">
+                    <option value="America/Mexico_City">
+                    <option value="America/Santiago">
+                    <option value="America/Argentina/Buenos_Aires">
+                    <option value="America/New_York">
+                    <option value="America/Los_Angeles">
+                    <option value="UTC">
+                </datalist>
+
+            </div>
+
+
             <!-- LUGAR -->
 
             <div class="field">
@@ -173,7 +205,7 @@
                 <input
                     type="text"
                     id="eventLocation"
-                    placeholder="Lugar del evento">
+                    placeholder="Lugar o enlace de la reunión">
 
             </div>
 
