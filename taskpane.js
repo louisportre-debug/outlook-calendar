@@ -9,6 +9,9 @@ const API_URL =
 // Tiempo máximo de espera a la IA (milisegundos)
 const TIEMPO_MAXIMO = 30000;
 
+// Cuenta de Google donde se guardan los eventos
+const CUENTA_GOOGLE = "lizzet.tito@gmail.com";
+
 // Zona horaria del ordenador (ej. "Europe/Paris")
 const ZONA_LOCAL =
     Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris";
@@ -327,6 +330,7 @@ function abrirGoogleCalendar() {
     }
 
     const params = new URLSearchParams({
+        authuser: CUENTA_GOOGLE,
         action: "TEMPLATE",
         text: titulo,
         dates: fechas,
