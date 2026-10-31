@@ -23,27 +23,52 @@ Office.onReady(function (info) {
 
     console.log("Outlook Add-in iniciado");
 
-    const btnAnalizar = document.getElementById("btnAnalizar");
-    const btnReanalizar = document.getElementById("btnReanalizar");
-    const btnCalendario = document.getElementById("btnCalendario");
+    // IDs REALES de taskpane.html
+    const analyzeButton =
+        document.getElementById("analyzeButton");
 
-    if (btnAnalizar) {
-        btnAnalizar.addEventListener("click", function () {
-            analizarEvento(false);
-        });
+    const reanalyzeButton =
+        document.getElementById("reanalyzeButton");
+
+    const googleCalendarButton =
+        document.getElementById("googleCalendarButton");
+
+
+    // Analizar evento
+    if (analyzeButton) {
+
+        analyzeButton.addEventListener(
+            "click",
+            function () {
+                analizarEvento(false);
+            }
+        );
     }
 
-    if (btnReanalizar) {
-        btnReanalizar.addEventListener("click", function () {
-            analizarEvento(true);
-        });
+
+    // Volver a analizar
+    if (reanalyzeButton) {
+
+        reanalyzeButton.addEventListener(
+            "click",
+            function () {
+                analizarEvento(true);
+            }
+        );
     }
 
-    if (btnCalendario) {
-        btnCalendario.addEventListener("click", prepararGoogleCalendar);
+
+    // Google Calendar
+    if (googleCalendarButton) {
+
+        googleCalendarButton.addEventListener(
+            "click",
+            prepararGoogleCalendar
+        );
     }
 
-    // Cargar automáticamente el correo
+
+    // Leer automáticamente el correo
     cargarCorreo();
 });
 
@@ -54,18 +79,55 @@ Office.onReady(function (info) {
 
 function cargarCorreo() {
 
-    const item = Office.context.mailbox.item;
+    const item =
+        Office.context.mailbox.item;
+
 
     if (!item) {
-        mostrarEstado("No se pudo acceder al correo.", "error");
+
+        mostrarEstado(
+            "No se pudo acceder al correo.",
+            "error"
+        );
+
         return;
     }
 
+
+    // Mostrar asunto inmediatamente
+    const emailSubject =
+        document.getElementById("emailSubject");
+
+    if (emailSubject) {
+
+        emailSubject.textContent =
+            item.subject || "—";
+    }
+
+
+    // Obtener remitente
+    const emailSender =
+        document.getElementById("emailSender");
+
+    if (emailSender) {
+
+        const sender =
+            obtenerRemitente(item);
+
+        emailSender.textContent =
+            sender || "—";
+    }
+
+
+    // Leer cuerpo
     item.body.getAsync(
         Office.CoercionType.Html,
         function (result) {
 
-            if (result.status !== Office.AsyncResultStatus.Succeeded) {
+            if (
+                result.status !==
+                Office.AsyncResultStatus.Succeeded
+            ) {
 
                 mostrarEstado(
                     "No se pudo leer el contenido del correo.",
@@ -75,9 +137,14 @@ function cargarCorreo() {
                 return;
             }
 
-            const html = result.value || "";
 
-            const texto = limpiarHTML(html);
+            const html =
+                result.value || "";
+
+
+            const texto =
+                limpiarHTML(html);
+
 
             datosCorreoOriginales = {
 
@@ -89,16 +156,17 @@ function cargarCorreo() {
 
                 body:
                     texto
-
             };
 
+
             console.log(
-                "Correo cargado:",
+                "Correo cargado correctamente:",
                 datosCorreoOriginales
             );
 
+
             mostrarEstado(
-                "Correo cargado. Pulsa «Analizar evento».",
+                "Correo leído. Pulsa «Analizar evento».",
                 "normal"
             );
         }
@@ -118,67 +186,77 @@ function obtenerRemitente(item) {
             item.from &&
             item.from.emailAddress
         ) {
+
             return item.from.emailAddress;
         }
 
-    } catch (e) {
-        console.log("No se pudo obtener remitente:", e);
+    } catch (error) {
+
+        console.log(
+            "No se pudo obtener el remitente:",
+            error
+        );
     }
+
 
     return "";
 }
 
 
 // ============================================================
-// LIMPIAR HTML DEL CORREO
+// LIMPIAR HTML
 // ============================================================
 
 function limpiarHTML(html) {
 
-    const parser = new DOMParser();
+    const parser =
+        new DOMParser();
 
-    const doc = parser.parseFromString(
-        html,
-        "text/html"
-    );
 
-    // Eliminar elementos que no aportan contenido
+    const doc =
+        parser.parseFromString(
+            html,
+            "text/html"
+        );
+
+
+    // Eliminar elementos innecesarios
     doc.querySelectorAll(
         "script, style, noscript"
-    ).forEach(function (el) {
-        el.remove();
+    ).forEach(function (elemento) {
+
+        elemento.remove();
     });
 
-    let texto = doc.body
-        ? doc.body.innerText
-        : html;
 
-    // Limpiar espacios excesivos
+    let texto =
+        doc.body
+            ? doc.body.innerText
+            : html;
+
+
+    // Normalizar espacios
     texto = texto
         .replace(/\r/g, "")
         .replace(/\n{3,}/g, "\n\n")
         .replace(/[ \t]{2,}/g, " ")
         .trim();
 
+
     return texto;
 }
 
 
 // ============================================================
-// ANALIZAR EVENTO CON GEMINI
+// ANALIZAR EVENTO
 // ============================================================
 
 async function analizarEvento(releerCorreo) {
 
-    const btnAnalizar =
-        document.getElementById("btnAnalizar");
-
-    const btnReanalizar =
-        document.getElementById("btnReanalizar");
-
     try {
 
         bloquearBotones(true);
+
 
         mostrarEstado(
             "Analizando el correo con IA...",
@@ -186,10 +264,8 @@ async function analizarEvento(releerCorreo) {
         );
 
 
-        // ----------------------------------------------------
-        // VOLVER A LEER EL CORREO
-        // ----------------------------------------------------
-
+        // Si se pulsa "Volver a analizar",
+        // volvemos a leer el correo.
         if (
             releerCorreo ||
             !datosCorreoOriginales
@@ -207,34 +283,48 @@ async function analizarEvento(releerCorreo) {
         }
 
 
-        // ----------------------------------------------------
-        // ENVIAR A CLOUDFLARE
-        // ----------------------------------------------------
-
-        const response = await fetch(
-            API_URL,
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json"
-                },
-
-                body: JSON.stringify(
-                    datosCorreoOriginales
-                )
-            }
+        console.log(
+            "Enviando correo a Cloudflare:",
+            datosCorreoOriginales
         );
 
 
-        // ----------------------------------------------------
-        // COMPROBAR RESPUESTA HTTP
-        // ----------------------------------------------------
+        // ====================================================
+        // CLOUDFLARE → GEMINI
+        // ====================================================
+
+        const response =
+            await fetch(
+                API_URL,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+
+                    body: JSON.stringify(
+                        datosCorreoOriginales
+                    )
+                }
+            );
+
+
+        console.log(
+            "Respuesta HTTP Cloudflare:",
+            response.status
+        );
+
+
+        // ====================================================
+        // ERROR HTTP
+        // ====================================================
 
         if (!response.ok) {
 
             const textoError =
                 await response.text();
+
 
             throw new Error(
                 "Error del servidor (" +
@@ -245,13 +335,19 @@ async function analizarEvento(releerCorreo) {
         }
 
 
+        // ====================================================
+        // LEER JSON
+        // ====================================================
+
         const resultado =
             await response.json();
 
 
-        // ----------------------------------------------------
-        // COMPROBAR RESULTADO
-        // ----------------------------------------------------
+        console.log(
+            "Respuesta de Cloudflare/Gemini:",
+            resultado
+        );
+
 
         if (!resultado.ok) {
 
@@ -270,25 +366,30 @@ async function analizarEvento(releerCorreo) {
         }
 
 
-        console.log(
-            "Evento detectado:",
-            resultado.event
-        );
-
-
-        // ----------------------------------------------------
-        // PASAR RESULTADO AL FORMULARIO
-        // ----------------------------------------------------
+        // ====================================================
+        // RELLENAR FORMULARIO ORIGINAL
+        // ====================================================
 
         rellenarFormulario(
             resultado.event
         );
 
 
+        // Mostrar formulario
+        const eventForm =
+            document.getElementById("eventForm");
+
+        if (eventForm) {
+
+            eventForm.hidden = false;
+        }
+
+
         mostrarEstado(
             "Evento detectado. Revísalo y modifica lo que necesites antes de añadirlo al calendario.",
             "success"
         );
+
 
     } catch (error) {
 
@@ -297,10 +398,12 @@ async function analizarEvento(releerCorreo) {
             error
         );
 
+
         mostrarEstado(
             "Error: " + error.message,
             "error"
         );
+
 
     } finally {
 
@@ -315,114 +418,134 @@ async function analizarEvento(releerCorreo) {
 
 function cargarCorreoAsync() {
 
-    return new Promise(function (resolve, reject) {
+    return new Promise(
+        function (resolve, reject) {
 
-        const item =
-            Office.context.mailbox.item;
-
-        if (!item) {
-
-            reject(
-                new Error(
-                    "No se pudo acceder al correo."
-                )
-            );
-
-            return;
-        }
+            const item =
+                Office.context.mailbox.item;
 
 
-        item.body.getAsync(
-            Office.CoercionType.Html,
-            function (result) {
+            if (!item) {
 
-                if (
-                    result.status !==
-                    Office.AsyncResultStatus.Succeeded
-                ) {
+                reject(
+                    new Error(
+                        "No se pudo acceder al correo."
+                    )
+                );
 
-                    reject(
-                        new Error(
-                            "No se pudo leer el correo."
-                        )
-                    );
-
-                    return;
-                }
-
-
-                const texto =
-                    limpiarHTML(result.value || "");
-
-
-                datosCorreoOriginales = {
-
-                    subject:
-                        item.subject || "",
-
-                    sender:
-                        obtenerRemitente(item),
-
-                    body:
-                        texto
-                };
-
-
-                resolve();
+                return;
             }
-        );
-    });
+
+
+            item.body.getAsync(
+                Office.CoercionType.Html,
+                function (result) {
+
+                    if (
+                        result.status !==
+                        Office.AsyncResultStatus.Succeeded
+                    ) {
+
+                        reject(
+                            new Error(
+                                "No se pudo leer el correo."
+                            )
+                        );
+
+                        return;
+                    }
+
+
+                    const texto =
+                        limpiarHTML(
+                            result.value || ""
+                        );
+
+
+                    datosCorreoOriginales = {
+
+                        subject:
+                            item.subject || "",
+
+                        sender:
+                            obtenerRemitente(item),
+
+                        body:
+                            texto
+                    };
+
+
+                    resolve();
+                }
+            );
+        }
+    );
 }
 
 
 // ============================================================
-// RELLENAR FORMULARIO
+// RELLENAR FORMULARIO ORIGINAL
 // ============================================================
 
 function rellenarFormulario(evento) {
 
+    // TÍTULO
     establecerValor(
-        "titulo",
+        "eventTitle",
         evento.titulo
     );
 
+
+    // FECHA INICIO
     establecerValor(
-        "fechaInicio",
+        "startDate",
         evento.fecha_inicio
     );
 
+
+    // HORA INICIO
     establecerValor(
-        "horaInicio",
+        "startTime",
         evento.hora_inicio
     );
 
+
+    // FECHA FIN
     establecerValor(
-        "fechaFin",
+        "endDate",
         evento.fecha_fin
     );
 
+
+    // HORA FIN
     establecerValor(
-        "horaFin",
+        "endTime",
         evento.hora_fin
     );
 
+
+    // LUGAR
     establecerValor(
-        "lugar",
+        "eventLocation",
         evento.lugar
     );
 
+
+    // DESCRIPCIÓN
     establecerValor(
-        "descripcion",
+        "eventDescription",
         evento.descripcion
     );
 
 
-    const checkbox =
-        document.getElementById("todoElDia");
+    // TODO EL DÍA
+    const allDay =
+        document.getElementById("allDay");
 
-    if (checkbox) {
 
-        checkbox.checked =
+    if (allDay) {
+
+        allDay.checked =
             evento.todo_el_dia === true;
     }
 }
@@ -437,12 +560,17 @@ function establecerValor(id, valor) {
     const elemento =
         document.getElementById(id);
 
+
     if (!elemento) {
         return;
     }
 
+
     elemento.value =
-        valor || "";
+        valor !== null &&
+        valor !== undefined
+            ? valor
+            : "";
 }
 
 
@@ -455,28 +583,28 @@ function prepararGoogleCalendar() {
     const evento = {
 
         titulo:
-            obtenerValor("titulo"),
+            obtenerValor("eventTitle"),
 
         fechaInicio:
-            obtenerValor("fechaInicio"),
+            obtenerValor("startDate"),
 
         horaInicio:
-            obtenerValor("horaInicio"),
+            obtenerValor("startTime"),
 
         fechaFin:
-            obtenerValor("fechaFin"),
+            obtenerValor("endDate"),
 
         horaFin:
-            obtenerValor("horaFin"),
+            obtenerValor("endTime"),
 
         todoElDia:
-            obtenerCheckbox("todoElDia"),
+            obtenerCheckbox("allDay"),
 
         lugar:
-            obtenerValor("lugar"),
+            obtenerValor("eventLocation"),
 
         descripcion:
-            obtenerValor("descripcion")
+            obtenerValor("eventDescription")
     };
 
 
@@ -486,8 +614,21 @@ function prepararGoogleCalendar() {
     );
 
 
+    const googleStatus =
+        document.getElementById("googleStatus");
+
+
+    if (googleStatus) {
+
+        googleStatus.hidden = false;
+
+        googleStatus.textContent =
+            "Evento revisado y preparado. La conexión con Google Calendar se añadirá en el siguiente paso.";
+    }
+
+
     mostrarEstado(
-        "Evento revisado y preparado. La conexión con Google Calendar se añadirá en el siguiente paso.",
+        "Evento preparado correctamente.",
         "success"
     );
 }
@@ -501,6 +642,7 @@ function obtenerValor(id) {
 
     const elemento =
         document.getElementById(id);
+
 
     return elemento
         ? elemento.value.trim()
@@ -517,6 +659,7 @@ function obtenerCheckbox(id) {
     const elemento =
         document.getElementById(id);
 
+
     return elemento
         ? elemento.checked
         : false;
@@ -531,19 +674,23 @@ function bloquearBotones(bloquear) {
 
     const botones = [
 
-        "btnAnalizar",
-        "btnReanalizar",
-        "btnCalendario"
+        "analyzeButton",
+        "reanalyzeButton",
+        "googleCalendarButton"
 
     ];
+
 
     botones.forEach(function (id) {
 
         const boton =
             document.getElementById(id);
 
+
         if (boton) {
-            boton.disabled = bloquear;
+
+            boton.disabled =
+                bloquear;
         }
     });
 }
@@ -556,16 +703,19 @@ function bloquearBotones(bloquear) {
 function mostrarEstado(mensaje, tipo) {
 
     const estado =
-        document.getElementById("estado");
+        document.getElementById("status");
+
 
     if (!estado) {
         return;
     }
 
+
     estado.textContent =
         mensaje;
 
+
     estado.className =
-        "estado " + (tipo || "");
+        "status " + (tipo || "");
 }
 ```
