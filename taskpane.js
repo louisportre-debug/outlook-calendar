@@ -1,652 +1,426 @@
-/* global Office */
+/* ============================================================
+   OUTLOOK → GOOGLE CALENDAR
+   Analizador inteligente con Gemini + Cloudflare
+   ============================================================ */
 
-let cuerpoCorreo = "";
-let asuntoCorreo = "";
-let remitenteCorreo = "";
+let datosCorreoOriginales = {
+    subject: "",
+    sender: "",
+    body: ""
+};
+
+let ultimoAnalisis = null;
 
 
 /* ============================================================
-   INICIO DEL COMPLEMENTO
+   INICIO
    ============================================================ */
 
-Office.onReady(function (info) {
+Office.onReady(async (info) => {
 
     if (info.host !== Office.HostType.Outlook) {
-
-        mostrarError(
-            "Este complemento debe ejecutarse en Outlook."
+        mostrarEstado(
+            "⚠️ Este complemento debe ejecutarse dentro de Outlook.",
+            "error"
         );
-
         return;
     }
 
+    await cargarCorreo();
 
-    cargarCorreo();
+    configurarEventos();
 
-
-    document
-        .getElementById("analyzeButton")
-        .addEventListener(
-            "click",
-            analizarEvento
-        );
-
-
-    document
-        .getElementById("reanalyzeButton")
-        .addEventListener(
-            "click",
-            analizarEvento
-        );
-
-
-    document
-        .getElementById("allDay")
-        .addEventListener(
-            "change",
-            cambiarTodoElDia
-        );
-
-
-    document
-        .getElementById("googleCalendarButton")
-        .addEventListener(
-            "click",
-            prepararGoogleCalendar
-        );
-
+    // Analizar automáticamente al abrir el complemento
+    await analizarEvento();
 });
 
 
 /* ============================================================
-   LEER CORREO
+   CARGAR CORREO
    ============================================================ */
 
-function cargarCorreo() {
+async function cargarCorreo() {
 
-    const item =
-        Office.context.mailbox.item;
+    try {
 
+        const item = Office.context.mailbox.item;
 
-    if (!item) {
-
-        mostrarError(
-            "No se ha podido acceder al correo actual."
-        );
-
-        return;
-    }
-
-
-    asuntoCorreo =
-        item.subject || "";
-
-
-    document
-        .getElementById("emailSubject")
-        .textContent =
-        asuntoCorreo || "(sin asunto)";
-
-
-    if (item.from) {
-
-        const nombre =
-            item.from.displayName || "";
-
-
-        const email =
-            item.from.emailAddress || "";
-
-
-        remitenteCorreo =
-            nombre +
-            (
-                email
-                    ? " <" + email + ">"
-                    : ""
-            );
-
-
-        document
-            .getElementById("emailSender")
-            .textContent =
-            remitenteCorreo;
-
-    } else {
-
-        document
-            .getElementById("emailSender")
-            .textContent =
-            "(remitente no disponible)";
-    }
-
-
-    item.body.getAsync(
-
-        Office.CoercionType.Text,
-
-        function (result) {
-
-            if (
-                result.status ===
-                Office.AsyncResultStatus.Succeeded
-            ) {
-
-                cuerpoCorreo =
-                    result.value || "";
-
-
-                document
-                    .getElementById("status")
-                    .textContent =
-                    "✅ Correo leído correctamente.";
-
-            } else {
-
-                mostrarError(
-                    "No se pudo leer el cuerpo del correo: " +
-                    result.error.message
-                );
-            }
-
+        if (!item) {
+            throw new Error("No se pudo acceder al correo actual.");
         }
 
-    );
+        const subject = item.subject || "";
 
-}
+        let sender = "";
 
-
-/* ============================================================
-   ANALIZAR EVENTO
-   ============================================================ */
-
-function analizarEvento() {
-
-    if (
-        !cuerpoCorreo ||
-        cuerpoCorreo.trim() === ""
-    ) {
-
-        mostrarError(
-            "El correo no contiene texto."
-        );
-
-        return;
-    }
-
-
-    const datos =
-        detectarEvento(
-            cuerpoCorreo,
-            asuntoCorreo
-        );
-
-
-    document
-        .getElementById("eventForm")
-        .hidden = false;
-
-
-    document
-        .getElementById("eventTitle")
-        .value =
-        datos.titulo;
-
-
-    document
-        .getElementById("startDate")
-        .value =
-        datos.fechaInicio;
-
-
-    document
-        .getElementById("endDate")
-        .value =
-        datos.fechaFin;
-
-
-    document
-        .getElementById("startTime")
-        .value =
-        datos.horaInicio;
-
-
-    document
-        .getElementById("endTime")
-        .value =
-        datos.horaFin;
-
-
-    document
-        .getElementById("eventLocation")
-        .value =
-        datos.lugar;
-
-
-    document
-        .getElementById("eventDescription")
-        .value =
-        datos.descripcion;
-
-
-    document
-        .getElementById("allDay")
-        .checked =
-        datos.todoElDia;
-
-
-    cambiarTodoElDia();
-
-
-    document
-        .getElementById("status")
-        .textContent =
-        "✅ Evento detectado. Revisa los datos.";
-
-}
-
-
-/* ============================================================
-   DETECTOR DE EVENTOS
-   ============================================================ */
-
-function detectarEvento(texto, asunto) {
-
-    const textoCompleto =
-        (asunto + "\n" + texto)
-            .replace(/\r/g, "")
-            .trim();
-
-
-    let titulo =
-        asunto ||
-        "Nuevo evento";
-
-
-    let fechaInicio = "";
-    let fechaFin = "";
-
-    let horaInicio = "";
-    let horaFin = "";
-
-    let todoElDia = false;
-
-
-    /* --------------------------------------------------------
-       DETECTAR FECHAS DD/MM/YYYY
-       -------------------------------------------------------- */
-
-    const fechas =
-        textoCompleto.match(
-            /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/g
-        );
-
-
-    if (fechas && fechas.length > 0) {
-
-        const primera =
-            convertirFecha(
-                fechas[0]
-            );
-
-
-        if (primera) {
-
-            fechaInicio =
-                primera;
-
-            fechaFin =
-                primera;
+        if (item.from) {
+            sender =
+                item.from.displayName ||
+                item.from.emailAddress ||
+                "";
         }
 
+        // --------------------------------------------------------
+        // IMPORTANTE:
+        // Utilizamos HTML porque Outlook Web puede conservar mejor
+        // tablas, listas, enlaces y estructura del mensaje.
+        // --------------------------------------------------------
 
-        if (fechas.length >= 2) {
+        const body = await obtenerCuerpoHTML(item);
 
-            const segunda =
-                convertirFecha(
-                    fechas[1]
-                );
-
-
-            if (segunda) {
-
-                fechaFin =
-                    segunda;
-            }
-
-        }
-
-    }
-
-
-    /* --------------------------------------------------------
-       DETECTAR FECHAS TIPO "3 DE NOVIEMBRE"
-       -------------------------------------------------------- */
-
-    if (!fechaInicio) {
-
-        const meses = {
-            enero: 1,
-            febrero: 2,
-            marzo: 3,
-            abril: 4,
-            mayo: 5,
-            junio: 6,
-            julio: 7,
-            agosto: 8,
-            septiembre: 9,
-            octubre: 10,
-            noviembre: 11,
-            diciembre: 12
+        datosCorreoOriginales = {
+            subject: subject,
+            sender: sender,
+            body: limpiarHTML(body)
         };
 
-
-        const regexMes =
-            /\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?\b/gi;
-
-
-        const encontrados =
-            [
-                ...textoCompleto.matchAll(
-                    regexMes
-                )
-            ];
-
-
-        if (encontrados.length > 0) {
-
-            const actual =
-                new Date()
-                    .getFullYear();
-
-
-            const f =
-                encontrados[0];
-
-
-            const dia =
-                parseInt(f[1], 10);
-
-
-            const mes =
-                meses[
-                    f[2].toLowerCase()
-                ];
-
-
-            const año =
-                f[3]
-                    ? parseInt(f[3], 10)
-                    : actual;
-
-
-            fechaInicio =
-                formatoFecha(
-                    año,
-                    mes,
-                    dia
-                );
-
-
-            fechaFin =
-                fechaInicio;
-
-
-            if (encontrados.length >= 2) {
-
-                const f2 =
-                    encontrados[1];
-
-
-                const dia2 =
-                    parseInt(
-                        f2[1],
-                        10
-                    );
-
-
-                const mes2 =
-                    meses[
-                        f2[2].toLowerCase()
-                    ];
-
-
-                const año2 =
-                    f2[3]
-                        ? parseInt(f2[3], 10)
-                        : año;
-
-
-                fechaFin =
-                    formatoFecha(
-                        año2,
-                        mes2,
-                        dia2
-                    );
-            }
-
-        }
-
-    }
-
-
-    /* --------------------------------------------------------
-       DETECTAR HORAS
-       -------------------------------------------------------- */
-
-    const horas =
-        textoCompleto.match(
-            /\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/g
+        console.log(
+            "Correo cargado:",
+            datosCorreoOriginales
         );
 
+    } catch (error) {
 
-    if (horas && horas.length > 0) {
+        console.error(
+            "Error cargando correo:",
+            error
+        );
 
-        horaInicio =
-            normalizarHora(
-                horas[0]
+        mostrarEstado(
+            "⚠️ No se pudo leer el contenido del correo.",
+            "error"
+        );
+    }
+}
+
+
+/* ============================================================
+   OBTENER HTML DEL CORREO
+   ============================================================ */
+
+function obtenerCuerpoHTML(item) {
+
+    return new Promise((resolve, reject) => {
+
+        item.body.getAsync(
+            Office.CoercionType.Html,
+            (result) => {
+
+                if (result.status === Office.AsyncResultStatus.Succeeded) {
+                    resolve(result.value || "");
+                } else {
+                    reject(
+                        new Error(
+                            result.error?.message ||
+                            "No se pudo obtener el cuerpo del correo."
+                        )
+                    );
+                }
+            }
+        );
+    });
+}
+
+
+/* ============================================================
+   LIMPIAR HTML
+   ============================================================ */
+
+function limpiarHTML(html) {
+
+    if (!html) {
+        return "";
+    }
+
+    const parser = new DOMParser();
+
+    const doc = parser.parseFromString(
+        html,
+        "text/html"
+    );
+
+    // Eliminar elementos que no aportan información
+    doc.querySelectorAll(
+        "script, style, noscript, svg"
+    ).forEach(el => el.remove());
+
+    // Convertir saltos visuales en saltos de texto
+    doc.querySelectorAll("br").forEach(br => {
+        br.replaceWith("\n");
+    });
+
+    doc.querySelectorAll("p, div, li, tr").forEach(el => {
+        el.insertAdjacentText("afterend", "\n");
+    });
+
+    let text = doc.body?.innerText || doc.body?.textContent || "";
+
+    // Normalización
+    text = text
+        .replace(/\u00A0/g, " ")
+        .replace(/\r/g, "")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+
+    return text;
+}
+
+
+/* ============================================================
+   CONFIGURAR BOTONES
+   ============================================================ */
+
+function configurarEventos() {
+
+    const btnAnalizar =
+        document.getElementById("btnAnalizar");
+
+    const btnReanalizar =
+        document.getElementById("btnReanalizar");
+
+    const btnCalendario =
+        document.getElementById("btnCalendario");
+
+    if (btnAnalizar) {
+        btnAnalizar.addEventListener(
+            "click",
+            analizarEvento
+        );
+    }
+
+    if (btnReanalizar) {
+        btnReanalizar.addEventListener(
+            "click",
+            async () => {
+
+                // Volvemos a leer el correo antes de analizar.
+                // Esto hace que "Volver a analizar" sea realmente
+                // una nueva lectura + nueva llamada a Gemini.
+
+                await cargarCorreo();
+
+                await analizarEvento(true);
+            }
+        );
+    }
+
+    if (btnCalendario) {
+        btnCalendario.addEventListener(
+            "click",
+            prepararGoogleCalendar
+        );
+    }
+}
+
+
+/* ============================================================
+   ANALIZAR EVENTO CON GEMINI
+   ============================================================ */
+
+async function analizarEvento(esReanalisis = false) {
+
+    try {
+
+        if (
+            !datosCorreoOriginales.subject &&
+            !datosCorreoOriginales.body
+        ) {
+            await cargarCorreo();
+        }
+
+        if (
+            !datosCorreoOriginales.subject &&
+            !datosCorreoOriginales.body
+        ) {
+            throw new Error(
+                "No hay contenido del correo para analizar."
+            );
+        }
+
+        mostrarEstado(
+            esReanalisis
+                ? "🔄 Volviendo a analizar el correo..."
+                : "🔎 Analizando el evento...",
+            "loading"
+        );
+
+        bloquearBotones(true);
+
+        // --------------------------------------------------------
+        // URL del backend de Cloudflare
+        //
+        // IMPORTANTE:
+        // Esta URL se sustituirá por la URL real que Cloudflare
+        // te haya dado para tu proyecto.
+        // --------------------------------------------------------
+
+        const backendUrl =
+            "https://outlook-calendar.pages.dev/analyze-event";
+
+        const response = await fetch(
+            backendUrl,
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    subject:
+                        datosCorreoOriginales.subject,
+
+                    sender:
+                        datosCorreoOriginales.sender,
+
+                    body:
+                        datosCorreoOriginales.body
+                })
+            }
+        );
+
+        let result;
+
+        try {
+            result = await response.json();
+        } catch (error) {
+            throw new Error(
+                "El servidor no devolvió una respuesta JSON válida."
+            );
+        }
+
+        if (!response.ok || !result.ok) {
+
+            console.error(
+                "Respuesta del backend:",
+                result
             );
 
-
-        if (horas.length >= 2) {
-
-            horaFin =
-                normalizarHora(
-                    horas[1]
-                );
+            throw new Error(
+                result.error ||
+                "No se pudo analizar el evento."
+            );
         }
 
-    }
+        ultimoAnalisis = result.event;
 
-
-    /* --------------------------------------------------------
-       DETECTAR "TODO EL DÍA"
-       -------------------------------------------------------- */
-
-    if (
-        /todo\s+el\s+d[ií]a/i.test(
-            textoCompleto
-        )
-    ) {
-
-        todoElDia = true;
-
-    }
-
-
-    /* --------------------------------------------------------
-       SI NO HAY HORAS
-       -------------------------------------------------------- */
-
-    if (
-        !horaInicio &&
-        !horaFin
-    ) {
-
-        todoElDia = true;
-    }
-
-
-    /* --------------------------------------------------------
-       LUGAR
-       -------------------------------------------------------- */
-
-    let lugar = "";
-
-
-    const lugarMatch =
-        textoCompleto.match(
-            /(?:lugar|ubicaci[oó]n|direcci[oó]n|venue)\s*[:\-]\s*(.+)/i
+        rellenarFormulario(
+            ultimoAnalisis
         );
 
+        mostrarEstado(
+            esReanalisis
+                ? "✅ Evento vuelto a analizar y actualizado."
+                : "✅ Evento analizado correctamente.",
+            "success"
+        );
 
-    if (lugarMatch) {
+    } catch (error) {
 
-        lugar =
-            lugarMatch[1]
-                .split("\n")[0]
-                .trim();
+        console.error(
+            "Error analizando evento:",
+            error
+        );
 
+        mostrarEstado(
+            "⚠️ " +
+            (
+                error?.message ||
+                "No se pudo analizar el evento."
+            ),
+            "error"
+        );
+
+    } finally {
+
+        bloquearBotones(false);
     }
-
-
-    /* --------------------------------------------------------
-       DESCRIPCIÓN
-       -------------------------------------------------------- */
-
-    const descripcion =
-        texto
-            .trim();
-
-
-    return {
-
-        titulo:
-            titulo,
-
-        fechaInicio:
-            fechaInicio,
-
-        fechaFin:
-            fechaFin,
-
-        horaInicio:
-            horaInicio,
-
-        horaFin:
-            horaFin,
-
-        todoElDia:
-            todoElDia,
-
-        lugar:
-            lugar,
-
-        descripcion:
-            descripcion
-
-    };
-
 }
 
 
 /* ============================================================
-   CONVERSIÓN DE FECHAS
+   RELLENAR FORMULARIO
    ============================================================ */
 
-function convertirFecha(valor) {
+function rellenarFormulario(evento) {
 
-    const partes =
-        valor.split(
-            /[\/\-]/
-        );
-
-
-    if (partes.length !== 3) {
-        return "";
-    }
-
-
-    let dia =
-        parseInt(
-            partes[0],
-            10
-        );
-
-
-    let mes =
-        parseInt(
-            partes[1],
-            10
-        );
-
-
-    let año =
-        parseInt(
-            partes[2],
-            10
-        );
-
-
-    if (año < 100) {
-        año += 2000;
-    }
-
-
-    return formatoFecha(
-        año,
-        mes,
-        dia
+    ponerValor(
+        "titulo",
+        evento.titulo || ""
     );
 
-}
-
-
-function formatoFecha(
-    año,
-    mes,
-    dia
-) {
-
-    return (
-        año +
-        "-" +
-        String(mes).padStart(2, "0") +
-        "-" +
-        String(dia).padStart(2, "0")
+    ponerValor(
+        "fechaInicio",
+        evento.fecha_inicio || ""
     );
 
+    ponerValor(
+        "horaInicio",
+        evento.hora_inicio || ""
+    );
+
+    ponerValor(
+        "fechaFin",
+        evento.fecha_fin || ""
+    );
+
+    ponerValor(
+        "horaFin",
+        evento.hora_fin || ""
+    );
+
+    ponerValor(
+        "lugar",
+        evento.lugar || ""
+    );
+
+    ponerValor(
+        "descripcion",
+        evento.descripcion || ""
+    );
+
+    const todoElDia =
+        document.getElementById("todoElDia");
+
+    if (todoElDia) {
+        todoElDia.checked =
+            evento.todo_el_dia === true;
+    }
+
+    actualizarVisibilidadHoras();
 }
 
 
 /* ============================================================
-   NORMALIZAR HORA
+   HELPERS FORMULARIO
    ============================================================ */
 
-function normalizarHora(valor) {
+function ponerValor(id, valor) {
 
-    const partes =
-        valor
-            .replace(".", ":")
-            .split(":");
+    const elemento =
+        document.getElementById(id);
 
-
-    if (partes.length !== 2) {
-        return "";
+    if (!elemento) {
+        console.warn(
+            "No existe el elemento:",
+            id
+        );
+        return;
     }
 
+    elemento.value = valor;
+}
 
-    return (
-        String(
-            parseInt(
-                partes[0],
-                10
-            )
-        ).padStart(2, "0") +
-        ":" +
-        partes[1]
-    );
 
+function obtenerValor(id) {
+
+    const elemento =
+        document.getElementById(id);
+
+    return elemento
+        ? elemento.value.trim()
+        : "";
 }
 
 
@@ -654,174 +428,143 @@ function normalizarHora(valor) {
    TODO EL DÍA
    ============================================================ */
 
-function cambiarTodoElDia() {
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
 
-    const todoElDia =
-        document
-            .getElementById("allDay")
-            .checked;
+        const checkbox =
+            document.getElementById("todoElDia");
 
+        if (checkbox) {
 
-    const camposHora =
-        document.querySelectorAll(
-            ".time-field"
-        );
-
-
-    camposHora.forEach(
-        function (campo) {
-
-            campo.style.display =
-                todoElDia
-                    ? "none"
-                    : "block";
-
+            checkbox.addEventListener(
+                "change",
+                actualizarVisibilidadHoras
+            );
         }
-    );
 
+        actualizarVisibilidadHoras();
+    }
+);
+
+
+function actualizarVisibilidadHoras() {
+
+    const checkbox =
+        document.getElementById("todoElDia");
+
+    const horaInicio =
+        document.getElementById("horaInicio");
+
+    const horaFin =
+        document.getElementById("horaFin");
+
+    if (!checkbox) {
+        return;
+    }
+
+    const ocultar =
+        checkbox.checked;
+
+    if (horaInicio) {
+        horaInicio.disabled = ocultar;
+    }
+
+    if (horaFin) {
+        horaFin.disabled = ocultar;
+    }
 }
 
 
 /* ============================================================
-   GOOGLE CALENDAR
+   PREPARAR GOOGLE CALENDAR
    ============================================================ */
 
 function prepararGoogleCalendar() {
 
-    const evento =
-        obtenerEventoFormulario();
-
-
-    if (!evento.titulo) {
-
-        mostrarGoogleStatus(
-            "⚠️ El evento necesita un título."
-        );
-
-        return;
-    }
-
-
-    if (!evento.fechaInicio) {
-
-        mostrarGoogleStatus(
-            "⚠️ Debes indicar una fecha de inicio."
-        );
-
-        return;
-    }
-
-
-    if (!evento.fechaFin) {
-
-        evento.fechaFin =
-            evento.fechaInicio;
-    }
-
-
-    /*
-       ESTA FUNCIÓN TODAVÍA NO ENVÍA NADA A GOOGLE.
-
-       En la siguiente fase añadiremos OAuth
-       y Google Calendar API.
-    */
-
-
-    mostrarGoogleStatus(
-        "✅ Evento preparado para Google Calendar. " +
-        "La conexión con Google se añadirá en la siguiente fase."
-    );
-
-}
-
-
-/* ============================================================
-   OBTENER DATOS DEL FORMULARIO
-   ============================================================ */
-
-function obtenerEventoFormulario() {
-
-    return {
+    const evento = {
 
         titulo:
-            document
-                .getElementById("eventTitle")
-                .value
-                .trim(),
+            obtenerValor("titulo"),
 
         fechaInicio:
-            document
-                .getElementById("startDate")
-                .value,
+            obtenerValor("fechaInicio"),
 
         horaInicio:
-            document
-                .getElementById("startTime")
-                .value,
+            obtenerValor("horaInicio"),
 
         fechaFin:
-            document
-                .getElementById("endDate")
-                .value,
+            obtenerValor("fechaFin"),
 
         horaFin:
-            document
-                .getElementById("endTime")
-                .value,
+            obtenerValor("horaFin"),
 
         todoElDia:
-            document
-                .getElementById("allDay")
-                .checked,
+            document.getElementById("todoElDia")?.checked || false,
 
         lugar:
-            document
-                .getElementById("eventLocation")
-                .value
-                .trim(),
+            obtenerValor("lugar"),
 
         descripcion:
-            document
-                .getElementById("eventDescription")
-                .value
-                .trim()
-
+            obtenerValor("descripcion")
     };
 
+    console.log(
+        "Evento preparado para Google Calendar:",
+        evento
+    );
+
+    mostrarEstado(
+        "✅ Evento preparado. La conexión con Google Calendar se añadirá en la siguiente fase.",
+        "success"
+    );
 }
 
 
 /* ============================================================
-   MENSAJES
+   ESTADO VISUAL
    ============================================================ */
 
-function mostrarGoogleStatus(
-    mensaje
+function mostrarEstado(
+    mensaje,
+    tipo = ""
 ) {
 
-    const elemento =
-        document.getElementById(
-            "googleStatus"
-        );
+    const estado =
+        document.getElementById("estado");
 
+    if (!estado) {
+        console.log(mensaje);
+        return;
+    }
 
-    elemento.hidden =
-        false;
+    estado.textContent = mensaje;
 
-
-    elemento.textContent =
-        mensaje;
-
+    estado.className =
+        "estado " +
+        (tipo || "");
 }
 
 
-function mostrarError(
-    mensaje
-) {
+/* ============================================================
+   BLOQUEAR BOTONES
+   ============================================================ */
 
-    document
-        .getElementById("status")
-        .textContent =
-        "❌ " + mensaje;
+function bloquearBotones(bloquear) {
 
+    const ids = [
+        "btnAnalizar",
+        "btnReanalizar"
+    ];
+
+    ids.forEach(id => {
+
+        const button =
+            document.getElementById(id);
+
+        if (button) {
+            button.disabled =
+                bloquear;
+        }
+    });
 }
