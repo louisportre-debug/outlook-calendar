@@ -1,136 +1,139 @@
+```javascript
 /* ============================================================
-   OUTLOOK → GOOGLE CALENDAR
-   Analizador inteligente con Gemini + Cloudflare
+   TASKPANE.JS
+   Outlook → Cloudflare Worker → Gemini
+   → extracción de evento → revisión manual
    ============================================================ */
 
-let datosCorreoOriginales = {
-    subject: "",
-    sender: "",
-    body: ""
-};
+const API_URL =
+    "https://outlook-calendar.louisportre.workers.dev/analyze-event";
 
-let ultimoAnalisis = null;
+let datosCorreoOriginales = null;
 
 
-/* ============================================================
-   INICIO
-   ============================================================ */
+// ============================================================
+// INICIO
+// ============================================================
 
-Office.onReady(async (info) => {
+Office.onReady(function (info) {
 
     if (info.host !== Office.HostType.Outlook) {
-        mostrarEstado(
-            "⚠️ Este complemento debe ejecutarse dentro de Outlook.",
-            "error"
-        );
         return;
     }
 
-    await cargarCorreo();
+    console.log("Outlook Add-in iniciado");
 
-    configurarEventos();
+    const btnAnalizar = document.getElementById("btnAnalizar");
+    const btnReanalizar = document.getElementById("btnReanalizar");
+    const btnCalendario = document.getElementById("btnCalendario");
 
-    // Analizar automáticamente al abrir el complemento
-    await analizarEvento();
+    if (btnAnalizar) {
+        btnAnalizar.addEventListener("click", function () {
+            analizarEvento(false);
+        });
+    }
+
+    if (btnReanalizar) {
+        btnReanalizar.addEventListener("click", function () {
+            analizarEvento(true);
+        });
+    }
+
+    if (btnCalendario) {
+        btnCalendario.addEventListener("click", prepararGoogleCalendar);
+    }
+
+    // Cargar automáticamente el correo
+    cargarCorreo();
 });
 
 
-/* ============================================================
-   CARGAR CORREO
-   ============================================================ */
+// ============================================================
+// CARGAR CORREO DE OUTLOOK
+// ============================================================
 
-async function cargarCorreo() {
+function cargarCorreo() {
+
+    const item = Office.context.mailbox.item;
+
+    if (!item) {
+        mostrarEstado("No se pudo acceder al correo.", "error");
+        return;
+    }
+
+    item.body.getAsync(
+        Office.CoercionType.Html,
+        function (result) {
+
+            if (result.status !== Office.AsyncResultStatus.Succeeded) {
+
+                mostrarEstado(
+                    "No se pudo leer el contenido del correo.",
+                    "error"
+                );
+
+                return;
+            }
+
+            const html = result.value || "";
+
+            const texto = limpiarHTML(html);
+
+            datosCorreoOriginales = {
+
+                subject:
+                    item.subject || "",
+
+                sender:
+                    obtenerRemitente(item),
+
+                body:
+                    texto
+
+            };
+
+            console.log(
+                "Correo cargado:",
+                datosCorreoOriginales
+            );
+
+            mostrarEstado(
+                "Correo cargado. Pulsa «Analizar evento».",
+                "normal"
+            );
+        }
+    );
+}
+
+
+// ============================================================
+// OBTENER REMITENTE
+// ============================================================
+
+function obtenerRemitente(item) {
 
     try {
 
-        const item = Office.context.mailbox.item;
-
-        if (!item) {
-            throw new Error("No se pudo acceder al correo actual.");
+        if (
+            item.from &&
+            item.from.emailAddress
+        ) {
+            return item.from.emailAddress;
         }
 
-        const subject = item.subject || "";
-
-        let sender = "";
-
-        if (item.from) {
-            sender =
-                item.from.displayName ||
-                item.from.emailAddress ||
-                "";
-        }
-
-        // --------------------------------------------------------
-        // IMPORTANTE:
-        // Utilizamos HTML porque Outlook Web puede conservar mejor
-        // tablas, listas, enlaces y estructura del mensaje.
-        // --------------------------------------------------------
-
-        const body = await obtenerCuerpoHTML(item);
-
-        datosCorreoOriginales = {
-            subject: subject,
-            sender: sender,
-            body: limpiarHTML(body)
-        };
-
-        console.log(
-            "Correo cargado:",
-            datosCorreoOriginales
-        );
-
-    } catch (error) {
-
-        console.error(
-            "Error cargando correo:",
-            error
-        );
-
-        mostrarEstado(
-            "⚠️ No se pudo leer el contenido del correo.",
-            "error"
-        );
+    } catch (e) {
+        console.log("No se pudo obtener remitente:", e);
     }
+
+    return "";
 }
 
 
-/* ============================================================
-   OBTENER HTML DEL CORREO
-   ============================================================ */
-
-function obtenerCuerpoHTML(item) {
-
-    return new Promise((resolve, reject) => {
-
-        item.body.getAsync(
-            Office.CoercionType.Html,
-            (result) => {
-
-                if (result.status === Office.AsyncResultStatus.Succeeded) {
-                    resolve(result.value || "");
-                } else {
-                    reject(
-                        new Error(
-                            result.error?.message ||
-                            "No se pudo obtener el cuerpo del correo."
-                        )
-                    );
-                }
-            }
-        );
-    });
-}
-
-
-/* ============================================================
-   LIMPIAR HTML
-   ============================================================ */
+// ============================================================
+// LIMPIAR HTML DEL CORREO
+// ============================================================
 
 function limpiarHTML(html) {
-
-    if (!html) {
-        return "";
-    }
 
     const parser = new DOMParser();
 
@@ -139,39 +142,33 @@ function limpiarHTML(html) {
         "text/html"
     );
 
-    // Eliminar elementos que no aportan información
+    // Eliminar elementos que no aportan contenido
     doc.querySelectorAll(
-        "script, style, noscript, svg"
-    ).forEach(el => el.remove());
-
-    // Convertir saltos visuales en saltos de texto
-    doc.querySelectorAll("br").forEach(br => {
-        br.replaceWith("\n");
+        "script, style, noscript"
+    ).forEach(function (el) {
+        el.remove();
     });
 
-    doc.querySelectorAll("p, div, li, tr").forEach(el => {
-        el.insertAdjacentText("afterend", "\n");
-    });
+    let texto = doc.body
+        ? doc.body.innerText
+        : html;
 
-    let text = doc.body?.innerText || doc.body?.textContent || "";
-
-    // Normalización
-    text = text
-        .replace(/\u00A0/g, " ")
+    // Limpiar espacios excesivos
+    texto = texto
         .replace(/\r/g, "")
-        .replace(/[ \t]+\n/g, "\n")
         .replace(/\n{3,}/g, "\n\n")
+        .replace(/[ \t]{2,}/g, " ")
         .trim();
 
-    return text;
+    return texto;
 }
 
 
-/* ============================================================
-   CONFIGURAR BOTONES
-   ============================================================ */
+// ============================================================
+// ANALIZAR EVENTO CON GEMINI
+// ============================================================
 
-function configurarEventos() {
+async function analizarEvento(releerCorreo) {
 
     const btnAnalizar =
         document.getElementById("btnAnalizar");
@@ -179,87 +176,43 @@ function configurarEventos() {
     const btnReanalizar =
         document.getElementById("btnReanalizar");
 
-    const btnCalendario =
-        document.getElementById("btnCalendario");
-
-    if (btnAnalizar) {
-        btnAnalizar.addEventListener(
-            "click",
-            analizarEvento
-        );
-    }
-
-    if (btnReanalizar) {
-        btnReanalizar.addEventListener(
-            "click",
-            async () => {
-
-                // Volvemos a leer el correo antes de analizar.
-                // Esto hace que "Volver a analizar" sea realmente
-                // una nueva lectura + nueva llamada a Gemini.
-
-                await cargarCorreo();
-
-                await analizarEvento(true);
-            }
-        );
-    }
-
-    if (btnCalendario) {
-        btnCalendario.addEventListener(
-            "click",
-            prepararGoogleCalendar
-        );
-    }
-}
-
-
-/* ============================================================
-   ANALIZAR EVENTO CON GEMINI
-   ============================================================ */
-
-async function analizarEvento(esReanalisis = false) {
-
     try {
-
-        if (
-            !datosCorreoOriginales.subject &&
-            !datosCorreoOriginales.body
-        ) {
-            await cargarCorreo();
-        }
-
-        if (
-            !datosCorreoOriginales.subject &&
-            !datosCorreoOriginales.body
-        ) {
-            throw new Error(
-                "No hay contenido del correo para analizar."
-            );
-        }
-
-        mostrarEstado(
-            esReanalisis
-                ? "🔄 Volviendo a analizar el correo..."
-                : "🔎 Analizando el evento...",
-            "loading"
-        );
 
         bloquearBotones(true);
 
-        // --------------------------------------------------------
-        // URL del backend de Cloudflare
-        //
-        // IMPORTANTE:
-        // Esta URL se sustituirá por la URL real que Cloudflare
-        // te haya dado para tu proyecto.
-        // --------------------------------------------------------
+        mostrarEstado(
+            "Analizando el correo con IA...",
+            "loading"
+        );
 
-        const backendUrl =
-            "https://outlook-calendar.pages.dev/analyze-event";
+
+        // ----------------------------------------------------
+        // VOLVER A LEER EL CORREO
+        // ----------------------------------------------------
+
+        if (
+            releerCorreo ||
+            !datosCorreoOriginales
+        ) {
+
+            await cargarCorreoAsync();
+        }
+
+
+        if (!datosCorreoOriginales) {
+
+            throw new Error(
+                "No se pudo obtener el contenido del correo."
+            );
+        }
+
+
+        // ----------------------------------------------------
+        // ENVIAR A CLOUDFLARE
+        // ----------------------------------------------------
 
         const response = await fetch(
-            backendUrl,
+            API_URL,
             {
                 method: "POST",
 
@@ -267,52 +220,73 @@ async function analizarEvento(esReanalisis = false) {
                     "Content-Type": "application/json"
                 },
 
-                body: JSON.stringify({
-                    subject:
-                        datosCorreoOriginales.subject,
-
-                    sender:
-                        datosCorreoOriginales.sender,
-
-                    body:
-                        datosCorreoOriginales.body
-                })
+                body: JSON.stringify(
+                    datosCorreoOriginales
+                )
             }
         );
 
-        let result;
 
-        try {
-            result = await response.json();
-        } catch (error) {
+        // ----------------------------------------------------
+        // COMPROBAR RESPUESTA HTTP
+        // ----------------------------------------------------
+
+        if (!response.ok) {
+
+            const textoError =
+                await response.text();
+
             throw new Error(
-                "El servidor no devolvió una respuesta JSON válida."
+                "Error del servidor (" +
+                response.status +
+                "): " +
+                textoError
             );
         }
 
-        if (!response.ok || !result.ok) {
 
-            console.error(
-                "Respuesta del backend:",
-                result
-            );
+        const resultado =
+            await response.json();
+
+
+        // ----------------------------------------------------
+        // COMPROBAR RESULTADO
+        // ----------------------------------------------------
+
+        if (!resultado.ok) {
 
             throw new Error(
-                result.error ||
-                "No se pudo analizar el evento."
+                resultado.error ||
+                "La IA no pudo analizar el correo."
             );
         }
 
-        ultimoAnalisis = result.event;
 
-        rellenarFormulario(
-            ultimoAnalisis
+        if (!resultado.event) {
+
+            throw new Error(
+                "La IA no devolvió los datos del evento."
+            );
+        }
+
+
+        console.log(
+            "Evento detectado:",
+            resultado.event
         );
 
+
+        // ----------------------------------------------------
+        // PASAR RESULTADO AL FORMULARIO
+        // ----------------------------------------------------
+
+        rellenarFormulario(
+            resultado.event
+        );
+
+
         mostrarEstado(
-            esReanalisis
-                ? "✅ Evento vuelto a analizar y actualizado."
-                : "✅ Evento analizado correctamente.",
+            "Evento detectado. Revísalo y modifica lo que necesites antes de añadirlo al calendario.",
             "success"
         );
 
@@ -324,11 +298,7 @@ async function analizarEvento(esReanalisis = false) {
         );
 
         mostrarEstado(
-            "⚠️ " +
-            (
-                error?.message ||
-                "No se pudo analizar el evento."
-            ),
+            "Error: " + error.message,
             "error"
         );
 
@@ -339,146 +309,146 @@ async function analizarEvento(esReanalisis = false) {
 }
 
 
-/* ============================================================
-   RELLENAR FORMULARIO
-   ============================================================ */
+// ============================================================
+// CARGAR CORREO COMO PROMESA
+// ============================================================
 
-function rellenarFormulario(evento) {
+function cargarCorreoAsync() {
 
-    ponerValor(
-        "titulo",
-        evento.titulo || ""
-    );
+    return new Promise(function (resolve, reject) {
 
-    ponerValor(
-        "fechaInicio",
-        evento.fecha_inicio || ""
-    );
+        const item =
+            Office.context.mailbox.item;
 
-    ponerValor(
-        "horaInicio",
-        evento.hora_inicio || ""
-    );
+        if (!item) {
 
-    ponerValor(
-        "fechaFin",
-        evento.fecha_fin || ""
-    );
+            reject(
+                new Error(
+                    "No se pudo acceder al correo."
+                )
+            );
 
-    ponerValor(
-        "horaFin",
-        evento.hora_fin || ""
-    );
+            return;
+        }
 
-    ponerValor(
-        "lugar",
-        evento.lugar || ""
-    );
 
-    ponerValor(
-        "descripcion",
-        evento.descripcion || ""
-    );
+        item.body.getAsync(
+            Office.CoercionType.Html,
+            function (result) {
 
-    const todoElDia =
-        document.getElementById("todoElDia");
+                if (
+                    result.status !==
+                    Office.AsyncResultStatus.Succeeded
+                ) {
 
-    if (todoElDia) {
-        todoElDia.checked =
-            evento.todo_el_dia === true;
-    }
+                    reject(
+                        new Error(
+                            "No se pudo leer el correo."
+                        )
+                    );
 
-    actualizarVisibilidadHoras();
+                    return;
+                }
+
+
+                const texto =
+                    limpiarHTML(result.value || "");
+
+
+                datosCorreoOriginales = {
+
+                    subject:
+                        item.subject || "",
+
+                    sender:
+                        obtenerRemitente(item),
+
+                    body:
+                        texto
+                };
+
+
+                resolve();
+            }
+        );
+    });
 }
 
 
-/* ============================================================
-   HELPERS FORMULARIO
-   ============================================================ */
+// ============================================================
+// RELLENAR FORMULARIO
+// ============================================================
 
-function ponerValor(id, valor) {
+function rellenarFormulario(evento) {
+
+    establecerValor(
+        "titulo",
+        evento.titulo
+    );
+
+    establecerValor(
+        "fechaInicio",
+        evento.fecha_inicio
+    );
+
+    establecerValor(
+        "horaInicio",
+        evento.hora_inicio
+    );
+
+    establecerValor(
+        "fechaFin",
+        evento.fecha_fin
+    );
+
+    establecerValor(
+        "horaFin",
+        evento.hora_fin
+    );
+
+    establecerValor(
+        "lugar",
+        evento.lugar
+    );
+
+    establecerValor(
+        "descripcion",
+        evento.descripcion
+    );
+
+
+    const checkbox =
+        document.getElementById("todoElDia");
+
+    if (checkbox) {
+
+        checkbox.checked =
+            evento.todo_el_dia === true;
+    }
+}
+
+
+// ============================================================
+// ESTABLECER VALOR
+// ============================================================
+
+function establecerValor(id, valor) {
 
     const elemento =
         document.getElementById(id);
 
     if (!elemento) {
-        console.warn(
-            "No existe el elemento:",
-            id
-        );
         return;
     }
 
-    elemento.value = valor;
+    elemento.value =
+        valor || "";
 }
 
 
-function obtenerValor(id) {
-
-    const elemento =
-        document.getElementById(id);
-
-    return elemento
-        ? elemento.value.trim()
-        : "";
-}
-
-
-/* ============================================================
-   TODO EL DÍA
-   ============================================================ */
-
-document.addEventListener(
-    "DOMContentLoaded",
-    () => {
-
-        const checkbox =
-            document.getElementById("todoElDia");
-
-        if (checkbox) {
-
-            checkbox.addEventListener(
-                "change",
-                actualizarVisibilidadHoras
-            );
-        }
-
-        actualizarVisibilidadHoras();
-    }
-);
-
-
-function actualizarVisibilidadHoras() {
-
-    const checkbox =
-        document.getElementById("todoElDia");
-
-    const horaInicio =
-        document.getElementById("horaInicio");
-
-    const horaFin =
-        document.getElementById("horaFin");
-
-    if (!checkbox) {
-        return;
-    }
-
-    const ocultar =
-        checkbox.checked;
-
-    if (horaInicio) {
-        horaInicio.disabled = ocultar;
-    }
-
-    if (horaFin) {
-        horaFin.disabled = ocultar;
-    }
-}
-
-
-/* ============================================================
-   PREPARAR GOOGLE CALENDAR
-   ============================================================ */
+// ============================================================
+// GOOGLE CALENDAR
+// ============================================================
 
 function prepararGoogleCalendar() {
 
@@ -500,7 +470,7 @@ function prepararGoogleCalendar() {
             obtenerValor("horaFin"),
 
         todoElDia:
-            document.getElementById("todoElDia")?.checked || false,
+            obtenerCheckbox("todoElDia"),
 
         lugar:
             obtenerValor("lugar"),
@@ -509,62 +479,93 @@ function prepararGoogleCalendar() {
             obtenerValor("descripcion")
     };
 
+
     console.log(
         "Evento preparado para Google Calendar:",
         evento
     );
 
+
     mostrarEstado(
-        "✅ Evento preparado. La conexión con Google Calendar se añadirá en la siguiente fase.",
+        "Evento revisado y preparado. La conexión con Google Calendar se añadirá en el siguiente paso.",
         "success"
     );
 }
 
 
-/* ============================================================
-   ESTADO VISUAL
-   ============================================================ */
+// ============================================================
+// OBTENER VALOR
+// ============================================================
 
-function mostrarEstado(
-    mensaje,
-    tipo = ""
-) {
+function obtenerValor(id) {
+
+    const elemento =
+        document.getElementById(id);
+
+    return elemento
+        ? elemento.value.trim()
+        : "";
+}
+
+
+// ============================================================
+// OBTENER CHECKBOX
+// ============================================================
+
+function obtenerCheckbox(id) {
+
+    const elemento =
+        document.getElementById(id);
+
+    return elemento
+        ? elemento.checked
+        : false;
+}
+
+
+// ============================================================
+// BLOQUEAR / DESBLOQUEAR BOTONES
+// ============================================================
+
+function bloquearBotones(bloquear) {
+
+    const botones = [
+
+        "btnAnalizar",
+        "btnReanalizar",
+        "btnCalendario"
+
+    ];
+
+    botones.forEach(function (id) {
+
+        const boton =
+            document.getElementById(id);
+
+        if (boton) {
+            boton.disabled = bloquear;
+        }
+    });
+}
+
+
+// ============================================================
+// ESTADO
+// ============================================================
+
+function mostrarEstado(mensaje, tipo) {
 
     const estado =
         document.getElementById("estado");
 
     if (!estado) {
-        console.log(mensaje);
         return;
     }
 
-    estado.textContent = mensaje;
+    estado.textContent =
+        mensaje;
 
     estado.className =
-        "estado " +
-        (tipo || "");
+        "estado " + (tipo || "");
 }
-
-
-/* ============================================================
-   BLOQUEAR BOTONES
-   ============================================================ */
-
-function bloquearBotones(bloquear) {
-
-    const ids = [
-        "btnAnalizar",
-        "btnReanalizar"
-    ];
-
-    ids.forEach(id => {
-
-        const button =
-            document.getElementById(id);
-
-        if (button) {
-            button.disabled =
-                bloquear;
-        }
-    });
-}
+```
