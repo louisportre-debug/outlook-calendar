@@ -67,9 +67,13 @@ export async function onRequestPost(context) {
         // ---------------------------------------------------------
         // 4. Fecha actual para ayudar a interpretar fechas sin año
         // ---------------------------------------------------------
-        const now = new Date();
+        const timezone = cleanText(body.timezone || "Europe/Paris");
+        const receivedLocal = cleanText(body.receivedLocal || "");
+        const receivedAt = cleanText(body.receivedAt || new Date().toISOString());
 
-        const currentDate = now.toISOString().substring(0, 10);
+        const currentDate = receivedLocal
+            ? receivedLocal + " (" + receivedAt.substring(0, 10) + ")"
+            : receivedAt.substring(0, 10);
 
         // ---------------------------------------------------------
         // 5. Prompt de extracción
@@ -81,8 +85,12 @@ de correos electrónicos.
 Tu trabajo es analizar el correo y extraer ÚNICAMENTE los datos del
 evento que una persona necesitaría para añadirlo a un calendario.
 
-FECHA ACTUAL:
+FECHA EN QUE SE RECIBIÓ EL CORREO (úsala para interpretar "mañana",
+"el próximo jueves", "esta semana", etc., y para deducir el año):
 ${currentDate}
+
+ZONA HORARIA DEL USUARIO:
+${timezone}
 
 ASUNTO DEL CORREO:
 ${subject}
@@ -173,57 +181,105 @@ REGLAS IMPORTANTES:
    cuál es el evento principal al que se refiere el correo.
    No mezcles fechas de eventos diferentes.
 
-10. Devuelve exclusivamente el objeto JSON solicitado por el esquema.
+10. ZONA HORARIA:
+   - Si el correo indica una zona horaria (CET, CEST, GMT, UTC, "hora de
+     Madrid", "hora de Lima", "EST", "PT"...), devuelve su nombre IANA
+     (ej. "Europe/Madrid", "America/Lima", "America/New_York") y deja
+     las horas TAL COMO aparecen en el correo, sin convertirlas.
+   - Si el correo da varias zonas, usa la que coincide con ${timezone}
+     si existe; si no, la primera.
+   - Si no se indica ninguna, devuelve "${timezone}".
+
+11. ENLACE ONLINE:
+   - Si es una reunión online (Teams, Zoom, Google Meet, Webex...),
+     devuelve el enlace para unirse en "enlace_online".
+   - Si no hay enlace, devuelve null.
+
+12. CONFIRMACIONES:
+   - Los correos de confirmación de inscripción, registro o
+     participación también son eventos: extrae los datos igual.
+
+13. es_evento = false solo si el correo no contiene ningún evento,
+    reunión, cita ni actividad con fecha.
+
+14. Devuelve exclusivamente el objeto JSON solicitado por el esquema.
 `;
 
         // ---------------------------------------------------------
         // 6. Esquema JSON que Gemini debe respetar
         // ---------------------------------------------------------
         const responseSchema = {
-            type: "object",
+            type: "OBJECT",
             properties: {
+                es_evento: {
+                    type: "BOOLEAN",
+                    description: "true si el correo contiene un evento con fecha."
+                },
                 titulo: {
-                    type: "string",
+                    type: "STRING",
                     description: "Nombre real del evento."
                 },
                 fecha_inicio: {
-                    type: ["string", "null"],
+                    type: "STRING",
+                    nullable: true,
                     description: "Fecha de inicio en formato YYYY-MM-DD."
                 },
                 hora_inicio: {
-                    type: ["string", "null"],
-                    description: "Hora de inicio en formato HH:mm."
+                    type: "STRING",
+                    nullable: true,
+                    description: "Hora de inicio en formato HH:mm (24 h)."
                 },
                 fecha_fin: {
-                    type: ["string", "null"],
+                    type: "STRING",
+                    nullable: true,
                     description: "Fecha de finalización en formato YYYY-MM-DD."
                 },
                 hora_fin: {
-                    type: ["string", "null"],
-                    description: "Hora de finalización en formato HH:mm."
+                    type: "STRING",
+                    nullable: true,
+                    description: "Hora de finalización en formato HH:mm (24 h)."
                 },
                 todo_el_dia: {
-                    type: "boolean",
+                    type: "BOOLEAN",
                     description: "Indica si el evento es de todo el día."
                 },
+                zona_horaria: {
+                    type: "STRING",
+                    description: "Zona horaria IANA de las horas indicadas."
+                },
                 lugar: {
-                    type: ["string", "null"],
-                    description: "Lugar o ubicación del evento."
+                    type: "STRING",
+                    nullable: true,
+                    description: "Lugar físico o dirección del evento."
+                },
+                enlace_online: {
+                    type: "STRING",
+                    nullable: true,
+                    description: "Enlace para unirse si es online."
                 },
                 descripcion: {
-                    type: ["string", "null"],
-                    description: "Descripción relevante del evento."
+                    type: "STRING",
+                    nullable: true,
+                    description: "Descripción breve y útil del evento."
                 }
             },
             required: [
+                "es_evento",
                 "titulo",
                 "fecha_inicio",
                 "hora_inicio",
                 "fecha_fin",
                 "hora_fin",
                 "todo_el_dia",
+                "zona_horaria",
                 "lugar",
+                "enlace_online",
                 "descripcion"
+            ],
+            propertyOrdering: [
+                "es_evento", "titulo", "fecha_inicio", "hora_inicio",
+                "fecha_fin", "hora_fin", "todo_el_dia", "zona_horaria",
+                "lugar", "enlace_online", "descripcion"
             ]
         };
 
@@ -239,8 +295,7 @@ REGLAS IMPORTANTES:
         const geminiUrl =
             "https://generativelanguage.googleapis.com/v1beta/models/" +
             model +
-            ":generateContent?key=" +
-            encodeURIComponent(apiKey);
+            ":generateContent";
 
         const geminiPayload = {
             contents: [
@@ -263,7 +318,8 @@ REGLAS IMPORTANTES:
         const geminiResponse = await fetch(geminiUrl, {
             method: "POST",
             headers: {
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "x-goog-api-key": apiKey
             },
             body: JSON.stringify(geminiPayload)
         });
@@ -338,7 +394,7 @@ REGLAS IMPORTANTES:
         // ---------------------------------------------------------
         // 11. Validación básica
         // ---------------------------------------------------------
-        eventData = normalizeEvent(eventData);
+        eventData = normalizeEvent(eventData, timezone);
 
         // ---------------------------------------------------------
         // 12. Devolver resultado a Outlook
@@ -382,31 +438,47 @@ function cleanText(value) {
 }
 
 
-function normalizeEvent(event) {
+function normalizeEvent(event, defaultTimezone) {
+    const fechaInicio = isValidDateString(event.fecha_inicio)
+        ? event.fecha_inicio
+        : null;
+
     return {
+        es_evento:
+            event.es_evento !== false,
+
+        zona_horaria:
+            typeof event.zona_horaria === "string" &&
+            /^[A-Za-z_]+(\/[A-Za-z_\-]+)*$/.test(event.zona_horaria.trim())
+                ? event.zona_horaria.trim()
+                : defaultTimezone,
+
+        enlace_online:
+            typeof event.enlace_online === "string" &&
+            /^https?:\/\//.test(event.enlace_online.trim())
+                ? event.enlace_online.trim()
+                : null,
+
         titulo:
             typeof event.titulo === "string"
                 ? event.titulo.trim()
                 : "",
 
-        fecha_inicio:
-            isValidDateString(event.fecha_inicio)
-                ? event.fecha_inicio
-                : null,
+        fecha_inicio: fechaInicio,
 
         hora_inicio:
             isValidTimeString(event.hora_inicio)
-                ? event.hora_inicio
+                ? event.hora_inicio.padStart(5, "0")
                 : null,
 
         fecha_fin:
             isValidDateString(event.fecha_fin)
                 ? event.fecha_fin
-                : null,
+                : fechaInicio,
 
         hora_fin:
             isValidTimeString(event.hora_fin)
-                ? event.hora_fin
+                ? event.hora_fin.padStart(5, "0")
                 : null,
 
         todo_el_dia:
@@ -439,6 +511,11 @@ function isValidDateString(value) {
 function isValidTimeString(value) {
     if (typeof value !== "string") {
         return false;
+    }
+
+    // Aceptar "9:00" además de "09:00"
+    if (/^\d:\d\d$/.test(value)) {
+        value = "0" + value;
     }
 
     return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
