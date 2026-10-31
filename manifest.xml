@@ -7,7 +7,7 @@
     xsi:type="MailApp">
 
     <Id>8d5e6b72-4b4d-4c2e-9a31-7c5f8a21e604</Id>
-    <Version>1.0.0.1</Version>
+    <Version>1.0.1.0</Version>
     <ProviderName>Personal</ProviderName>
     <DefaultLocale>es-ES</DefaultLocale>
 
@@ -111,5 +111,101 @@
                 <bt:String id="buttonDescription" DefaultValue="Lee este correo y prepara un evento para Google Calendar."/>
             </bt:LongStrings>
         </Resources>
+
+        <!-- Versión 1.1: escritorio + móvil -->
+        <VersionOverrides
+            xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1"
+            xsi:type="VersionOverridesV1_1">
+
+            <Requirements>
+                <bt:Sets DefaultMinVersion="1.5">
+                    <bt:Set Name="Mailbox"/>
+                </bt:Sets>
+            </Requirements>
+
+            <Hosts>
+                <Host xsi:type="MailHost">
+                    <DesktopFormFactor>
+                        <ExtensionPoint xsi:type="MessageReadCommandSurface">
+                            <OfficeTab id="TabDefault">
+                                <Group id="calendarGroup">
+                                    <Label resid="groupLabel"/>
+
+                                    <Control xsi:type="Button" id="addCalendarButton">
+                                        <Label resid="buttonLabel"/>
+
+                                        <Supertip>
+                                            <Title resid="buttonLabel"/>
+                                            <Description resid="buttonDescription"/>
+                                        </Supertip>
+
+                                        <Icon>
+                                            <bt:Image size="16" resid="icon16"/>
+                                            <bt:Image size="32" resid="icon32"/>
+                                            <bt:Image size="80" resid="icon80"/>
+                                        </Icon>
+
+                                        <Action xsi:type="ShowTaskpane">
+                                            <SourceLocation resid="taskPaneUrl"/>
+                                        </Action>
+                                    </Control>
+                                </Group>
+                            </OfficeTab>
+                        </ExtensionPoint>
+                    </DesktopFormFactor>
+
+                    <MobileFormFactor>
+                        <ExtensionPoint xsi:type="MobileMessageReadCommandSurface">
+                            <Group id="mobileCalendarGroup">
+                                <Label resid="groupLabel"/>
+                                <Control xsi:type="MobileButton" id="mobileAddCalendarButton">
+                                    <Label resid="buttonLabel"/>
+                                    <Icon xsi:type="bt:MobileIconList">
+                                        <bt:Image size="25" scale="1" resid="icon25"/>
+                                        <bt:Image size="25" scale="2" resid="icon48"/>
+                                        <bt:Image size="25" scale="3" resid="icon80"/>
+                                        <bt:Image size="32" scale="1" resid="icon32"/>
+                                        <bt:Image size="32" scale="2" resid="icon64"/>
+                                        <bt:Image size="32" scale="3" resid="icon96"/>
+                                        <bt:Image size="48" scale="1" resid="icon48"/>
+                                        <bt:Image size="48" scale="2" resid="icon96"/>
+                                        <bt:Image size="48" scale="3" resid="icon144"/>
+                                    </Icon>
+                                    <Action xsi:type="ShowTaskpane">
+                                        <SourceLocation resid="taskPaneUrl"/>
+                                    </Action>
+                                </Control>
+                            </Group>
+                        </ExtensionPoint>
+                    </MobileFormFactor>
+                </Host>
+            </Hosts>
+
+            <Resources>
+                <bt:Images>
+                    <bt:Image id="icon16" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/icon-16.png"/>
+                    <bt:Image id="icon32" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/icon-32.png"/>
+                    <bt:Image id="icon80" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/icon-80.png"/>
+                    <bt:Image id="icon25" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/icon-25.png"/>
+                    <bt:Image id="icon48" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/icon-48.png"/>
+                    <bt:Image id="icon64" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/icon-64.png"/>
+                    <bt:Image id="icon96" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/icon-96.png"/>
+                    <bt:Image id="icon144" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/icon-144.png"/>
+                </bt:Images>
+
+                <bt:Urls>
+                    <bt:Url id="taskPaneUrl" DefaultValue="https://louisportre-debug.github.io/outlook-calendar/taskpane.html"/>
+                </bt:Urls>
+
+                <bt:ShortStrings>
+                    <bt:String id="groupLabel" DefaultValue="Calendario"/>
+                    <bt:String id="buttonLabel" DefaultValue="Añadir al calendario"/>
+                </bt:ShortStrings>
+
+                <bt:LongStrings>
+                    <bt:String id="buttonDescription" DefaultValue="Lee este correo y prepara un evento para Google Calendar."/>
+                </bt:LongStrings>
+            </Resources>
+        </VersionOverrides>
     </VersionOverrides>
 </OfficeApp>
