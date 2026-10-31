@@ -2,19 +2,13 @@
 <html lang="es">
 
 <head>
-
     <meta charset="UTF-8">
-
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Añadir al calendario</title>
 
-    <link rel="stylesheet"
-          href="taskpane.css">
+    <link rel="stylesheet" href="taskpane.css">
 
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-
 </head>
 
 <body>
@@ -27,58 +21,214 @@
             Leyendo el correo...
         </div>
 
-        <div class="field">
+        <!-- INFORMACIÓN DEL CORREO -->
 
-            <label>Asunto</label>
+        <div class="email-info">
 
-            <div id="subject"
-                 class="value">
-                —
+            <div class="field">
+                <label>Asunto del correo</label>
+                <div id="emailSubject" class="readonly-value">—</div>
+            </div>
+
+            <div class="field">
+                <label>Remitente</label>
+                <div id="emailSender" class="readonly-value">—</div>
             </div>
 
         </div>
 
-        <div class="field">
-
-            <label>Remitente</label>
-
-            <div id="sender"
-                 class="value">
-                —
-            </div>
-
-        </div>
-
-        <div class="field">
-
-            <label>Contenido del correo</label>
-
-            <textarea
-                id="body"
-                readonly>
-            </textarea>
-
-        </div>
-
-        <button
-            id="analyzeButton"
-            class="primary">
-
+        <button id="analyzeButton" class="primary">
             🔎 Analizar evento
-
         </button>
 
-        <div id="result"
-             class="result"
-             hidden>
+
+        <!-- FORMULARIO DEL EVENTO -->
+
+        <div id="eventForm" class="event-form" hidden>
 
             <h2>Evento detectado</h2>
 
-            <p id="eventResult"></p>
+            <p class="help-text">
+                Revisa los datos antes de añadir el evento al calendario.
+            </p>
+
+
+            <!-- TÍTULO -->
+
+            <div class="field">
+                <label for="eventTitle">
+                    Título
+                </label>
+
+                <input
+                    type="text"
+                    id="eventTitle"
+                    placeholder="Título del evento">
+            </div>
+
+
+            <!-- TODO EL DÍA -->
+
+            <div class="all-day-container">
+
+                <label class="checkbox-label">
+
+                    <input
+                        type="checkbox"
+                        id="allDay">
+
+                    <span>Todo el día</span>
+
+                </label>
+
+            </div>
+
+
+            <!-- INICIO -->
+
+            <div class="date-section">
+
+                <h3>Inicio</h3>
+
+                <div class="date-time-grid">
+
+                    <div class="field">
+
+                        <label for="startDate">
+                            Fecha
+                        </label>
+
+                        <input
+                            type="date"
+                            id="startDate">
+
+                    </div>
+
+
+                    <div
+                        class="field time-field">
+
+                        <label for="startTime">
+                            Hora
+                        </label>
+
+                        <input
+                            type="time"
+                            id="startTime">
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- FINALIZACIÓN -->
+
+            <div class="date-section">
+
+                <h3>Finalización</h3>
+
+                <div class="date-time-grid">
+
+                    <div class="field">
+
+                        <label for="endDate">
+                            Fecha
+                        </label>
+
+                        <input
+                            type="date"
+                            id="endDate">
+
+                    </div>
+
+
+                    <div
+                        class="field time-field">
+
+                        <label for="endTime">
+                            Hora
+                        </label>
+
+                        <input
+                            type="time"
+                            id="endTime">
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- LUGAR -->
+
+            <div class="field">
+
+                <label for="eventLocation">
+                    Lugar
+                </label>
+
+                <input
+                    type="text"
+                    id="eventLocation"
+                    placeholder="Lugar del evento">
+
+            </div>
+
+
+            <!-- DESCRIPCIÓN -->
+
+            <div class="field">
+
+                <label for="eventDescription">
+                    Descripción
+                </label>
+
+                <textarea
+                    id="eventDescription"
+                    rows="6"
+                    placeholder="Descripción del evento"></textarea>
+
+            </div>
+
+
+            <!-- BOTONES -->
+
+            <div class="actions">
+
+                <button
+                    id="reanalyzeButton"
+                    class="secondary">
+
+                    🔄 Volver a analizar
+
+                </button>
+
+
+                <button
+                    id="googleCalendarButton"
+                    class="google-button">
+
+                    📅 Añadir a Google Calendar
+
+                </button>
+
+            </div>
+
+
+            <div
+                id="googleStatus"
+                class="google-status"
+                hidden>
+
+            </div>
 
         </div>
 
     </div>
+
 
     <script src="taskpane.js"></script>
 
